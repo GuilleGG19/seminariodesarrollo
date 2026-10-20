@@ -1,5 +1,6 @@
 // Logica del CRUD de ninos. Aqui viven las consultas SQL.
 const { pool } = require('../config/db');
+const { consultar } = require('../utils/paginacion');
 
 const crearError = (status, mensaje) => Object.assign(new Error(mensaje), { status });
 
@@ -20,18 +21,79 @@ const SELECT_NINO = `
   JOIN comunidad c ON c.id = n.comunidad_id
   JOIN padre p ON p.id = n.padre_id`;
 
-// Filtros opcionales: "buscar" (nombre), "comunidadId" y "padreId"
-async function listar({ buscar, comunidadId, padreId }) {
+// Filtros opcionales: "buscar" (nombre), "comunidadId", "padreId" y "sexo"
+async function listar({ buscar, comunidadId, padreId, sexo }, paginacion) {
   const patron = buscar ? `%${buscar}%` : null;
-  const { rows } = await pool.query(
-    `${SELECT_NINO}
-     WHERE ($1::text IS NULL OR n.nombre ILIKE $1)
-       AND ($2::uuid IS NULL OR n.comunidad_id = $2)
-       AND ($3::uuid IS NULL OR n.padre_id = $3)
-     ORDER BY n.nombre`,
-    [patron, comunidadId || null, padreId || null]
+  return consultar(
+    pool,
+    {
+      sql: `${SELECT_NINO}
+            WHERE ($1::text IS NULL OR n.nombre ILIKE $1)
+              AND ($2::uuid IS NULL OR n.comunidad_id = $2)
+              AND ($3::uuid IS NULL OR n.padre_id = $3)
+              AND ($4::text IS NULL OR n.sexo = $4)`,
+      params: [patron, comunidadId || null, padreId || null, sexo || null],
+      orden: 't.nombre, t.id',
+    },
+    paginacion
   );
-  return rows;
+}
+
+// Cartilla de vacunacion: el esquema completo del nino (v_esquema_vacunacion)
+// agrupado por vacuna, con el estado de cada dosis y un resumen.
+async function obtenerEsquema(id) {
+  const nino = await obtenerPorId(id); // lanza 404 si no existe
+  const { rows } = await pool.query(
+    `SELECT vacuna_id, vacuna, dosis_total, numero_dosis, edad_dosis_meses,
+            vacunacion_id, fecha_aplicada, programada, fecha_objetivo, estado, dias_atraso
+     FROM v_esquema_vacunacion
+     WHERE nino_id = $1
+     ORDER BY vacuna_id, numero_dosis`,
+    [id]
+  );
+
+  const porVacuna = new Map();
+  const resumen = { aplicadas: 0, atrasadas: 0, pendientes: 0, sin_fecha: 0, total: rows.length };
+  const CONTADOR = { aplicada: 'aplicadas', atrasada: 'atrasadas', pendiente: 'pendientes', sin_fecha: 'sin_fecha' };
+
+  for (const fila of rows) {
+    resumen[CONTADOR[fila.estado]] += 1;
+    if (!porVacuna.has(fila.vacuna_id)) {
+      porVacuna.set(fila.vacuna_id, {
+        vacuna_id: fila.vacuna_id,
+        vacuna: fila.vacuna,
+        dosis_total: fila.dosis_total,
+        dosis: [],
+      });
+    }
+    porVacuna.get(fila.vacuna_id).dosis.push({
+      numero_dosis: fila.numero_dosis,
+      edad_recomendada_meses: fila.edad_dosis_meses,
+      fecha_objetivo: fila.fecha_objetivo,
+      fecha_aplicada: fila.fecha_aplicada,
+      estado: fila.estado,
+      dias_atraso: fila.dias_atraso,
+      programada: fila.programada,
+      vacunacion_id: fila.vacunacion_id,
+    });
+  }
+
+  // Vacunas ordenadas por la fecha de su primera dosis
+  const vacunas = [...porVacuna.values()].sort(
+    (a, b) =>
+      String(a.dosis[0].fecha_objetivo || '9999').localeCompare(String(b.dosis[0].fecha_objetivo || '9999')) ||
+      a.vacuna.localeCompare(b.vacuna)
+  );
+  for (const v of vacunas) {
+    v.aplicadas = v.dosis.filter((d) => d.estado === 'aplicada').length;
+    v.completa = v.aplicadas === v.dosis_total;
+  }
+
+  return {
+    nino: { id: nino.id, nombre: nino.nombre, fecha_nacimiento: nino.fecha_nacimiento, edad_meses: nino.edad_meses },
+    resumen: { ...resumen, al_dia: resumen.atrasadas === 0 },
+    vacunas,
+  };
 }
 
 async function obtenerPorId(id) {
@@ -98,4 +160,4 @@ async function eliminar(id) {
   }
 }
 
-module.exports = { listar, obtenerPorId, crear, actualizar, eliminar };
+module.exports = { listar, obtenerPorId, obtenerEsquema, crear, actualizar, eliminar };

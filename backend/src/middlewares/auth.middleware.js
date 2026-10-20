@@ -3,25 +3,33 @@
 const jwt = require('jsonwebtoken');
 const { obtenerUsuarioActivo } = require('../services/auth.service');
 
+// Devuelve el contenido del token si es valido; si no, null
+function leerToken(req) {
+  const token = req.cookies && req.cookies.token;
+  if (!token) return null;
+  try {
+    return jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+  } catch (error) {
+    return null;
+  }
+}
+
 const verificarToken = async (req, res, next) => {
   try {
-    const token = req.cookies && req.cookies.token;
-    if (!token) {
+    if (!req.cookies || !req.cookies.token) {
       return res.status(401).json({ error: 'No autenticado' });
     }
 
-    let payload;
-    try {
-      payload = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
-    } catch (error) {
+    const payload = leerToken(req);
+    if (!payload || !Number.isInteger(payload.tv)) {
       return res.status(401).json({ error: 'Sesión inválida o expirada' });
     }
 
-    // Se consulta la base en cada peticion: si el usuario fue desactivado,
-    // pierde el acceso de inmediato aunque su token no haya expirado.
-    const usuario = await obtenerUsuarioActivo(payload.id);
+    // Se consulta la base en cada peticion: si el usuario fue desactivado, cerro
+    // sesion o cambio su contrasena, pierde el acceso de inmediato.
+    const usuario = await obtenerUsuarioActivo(payload.id, payload.tv);
     if (!usuario) {
-      return res.status(401).json({ error: 'Usuario no válido o inactivo' });
+      return res.status(401).json({ error: 'Sesión inválida o expirada' });
     }
 
     req.usuario = usuario; // disponible en los controladores
@@ -31,4 +39,4 @@ const verificarToken = async (req, res, next) => {
   }
 };
 
-module.exports = { verificarToken };
+module.exports = { verificarToken, leerToken };

@@ -1,15 +1,18 @@
 // Controlador de alertas: valida lo que llega por HTTP y responde.
 // La logica y las consultas estan en services/alerta.service.js
 const alertaService = require('../services/alerta.service');
+const { leerPaginacion } = require('../utils/paginacion');
 
-const TIPOS = ['desnutricion', 'sobrepeso', 'sin_registros', 'vacuna_atrasada'];
+const TIPOS = ['desnutricion', 'sobrepeso', 'talla_baja', 'sin_registros', 'vacuna_atrasada'];
 const NIVELES = ['preventiva', 'critica'];
 
 const leer = (valor) => (typeof valor === 'string' ? valor.trim() : '');
 
-// GET /api/alertas?nino_id=uuid&tipo=desnutricion&nivel=critica&atendida=false
+// GET /api/alertas?nino_id=uuid&comunidad_id=uuid&tipo=desnutricion&nivel=critica&atendida=false&pagina=1&limite=50
 const listar = async (req, res, next) => {
   try {
+    const { paginacion, error } = leerPaginacion(req.query);
+    if (error) return res.status(400).json({ error });
     const tipo = leer(req.query.tipo);
     const nivel = leer(req.query.nivel);
     const atendida = leer(req.query.atendida);
@@ -25,12 +28,16 @@ const listar = async (req, res, next) => {
     }
 
     res.json(
-      await alertaService.listar({
-        ninoId: leer(req.query.nino_id),
-        tipo,
-        nivel,
-        atendida: atendida ? atendida === 'true' : undefined,
-      })
+      await alertaService.listar(
+        {
+          ninoId: leer(req.query.nino_id),
+          comunidadId: leer(req.query.comunidad_id),
+          tipo,
+          nivel,
+          atendida: atendida ? atendida === 'true' : undefined,
+        },
+        paginacion
+      )
     );
   } catch (error) {
     next(error);

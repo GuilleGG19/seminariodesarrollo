@@ -11,11 +11,13 @@
 // canal que prefiere (correo para Email, chat_id para Telegram).
 const { pool } = require('../config/db');
 const { UMBRALES } = require('./alertaReglas.service');
+const { descifrar } = require('../utils/cifrado');
 
 const crearError = (status, mensaje) => Object.assign(new Error(mensaje), { status });
 
 const HOY = `(now() at time zone 'America/Guatemala')::date`;
 const DIAS_POR_MES = 30.4375;
+const DIAS_PROXIMA_DOSIS = 30; // "pendiente" = dosis que toca dentro de este numero de dias
 const EDAD_MESES = `(extract(year from age(${HOY}, n.fecha_nacimiento)) * 12 + extract(month from age(${HOY}, n.fecha_nacimiento)))::int`;
 
 // Arma la consulta de destinatarios segun los filtros. Todo va como parametros ($n).
@@ -38,13 +40,17 @@ function consultaDestinatarios(filtros) {
   }
 
   if (filtros.estadoVacunacion) {
-    // Ninos con al menos una dosis sin aplicar en ese estado (opcionalmente de una vacuna)
-    const estado = filtros.estadoVacunacion === 'atrasada' ? `v.proxima_dosis < ${HOY}` : `v.proxima_dosis >= ${HOY}`;
-    const vacuna = filtros.vacunaId ? `AND v.vacuna_id = ${agregar(filtros.vacunaId)}` : '';
+    // Segun el esquema (v_esquema_vacunacion), opcionalmente de una sola vacuna:
+    //  atrasada  = alguna dosis cuya fecha ya paso sin aplicarse (registrada o no)
+    //  pendiente = alguna dosis que toca dentro de los proximos DIAS_PROXIMA_DOSIS dias
+    const estado =
+      filtros.estadoVacunacion === 'atrasada'
+        ? `e.estado = 'atrasada' AND e.edad_nino_meses < ${agregar(UMBRALES.edadMaximaVacunacionMeses)}`
+        : `e.estado = 'pendiente' AND e.fecha_objetivo <= ${HOY} + ${agregar(DIAS_PROXIMA_DOSIS)}::int`;
+    const vacuna = filtros.vacunaId ? `AND e.vacuna_id = ${agregar(filtros.vacunaId)}` : '';
     condiciones.push(
-      `EXISTS (SELECT 1 FROM vacunacion v
-               WHERE v.nino_id = n.id AND v.fecha_aplicada IS NULL AND v.proxima_dosis IS NOT NULL
-                 AND ${estado} ${vacuna})`
+      `EXISTS (SELECT 1 FROM v_esquema_vacunacion e
+               WHERE e.nino_id = n.id AND ${estado} ${vacuna})`
     );
   } else if (filtros.vacunaId) {
     // Solo vacuna: ninos que ya tienen la edad recomendada y aun no completan sus dosis
@@ -128,7 +134,7 @@ async function vistaPrevia(filtros) {
       padre: d.padre,
       ninos: d.ninos,
       comunidad: d.comunidad,
-      telefono: d.telefono,
+      telefono: descifrar(d.telefono),
       canal_preferido: d.canal,
     })),
   };

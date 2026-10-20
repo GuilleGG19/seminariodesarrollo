@@ -8,5 +8,6 @@ const router = Router();
 router.post('/login', limiteLogin, authController.login);
 router.post('/logout', authController.logout);
 router.get('/perfil', verificarToken, authController.perfil);
+router.patch('/password', verificarToken, limiteLogin, authController.cambiarPassword);
 
 module.exports = router;

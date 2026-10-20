@@ -3,10 +3,12 @@ const { pool } = require('../config/db');
 
 const crearError = (status, mensaje) => Object.assign(new Error(mensaje), { status });
 
+const COLUMNAS = 'id, nombre, edad_recomendada_meses, dosis_total, edades_dosis_meses';
+
 async function listar({ buscar }) {
   const patron = buscar ? `%${buscar}%` : null;
   const { rows } = await pool.query(
-    `SELECT id, nombre, edad_recomendada_meses, dosis_total
+    `SELECT ${COLUMNAS}
      FROM vacuna
      WHERE ($1::text IS NULL OR nombre ILIKE $1)
      ORDER BY edad_recomendada_meses, nombre`,
@@ -17,7 +19,7 @@ async function listar({ buscar }) {
 
 async function obtenerPorId(id) {
   const { rows } = await pool.query(
-    `SELECT id, nombre, edad_recomendada_meses, dosis_total
+    `SELECT ${COLUMNAS}
      FROM vacuna
      WHERE id = $1`,
     [id]
@@ -41,18 +43,18 @@ async function verificarNombreLibre(nombre, idExcluido) {
   }
 }
 
-async function crear({ nombre, edad_recomendada_meses, dosis_total }) {
+async function crear({ nombre, edad_recomendada_meses, dosis_total, edades_dosis_meses }) {
   await verificarNombreLibre(nombre, null);
   const { rows } = await pool.query(
-    `INSERT INTO vacuna (nombre, edad_recomendada_meses, dosis_total)
-     VALUES ($1, $2, $3)
-     RETURNING id, nombre, edad_recomendada_meses, dosis_total`,
-    [nombre, edad_recomendada_meses, dosis_total]
+    `INSERT INTO vacuna (nombre, edad_recomendada_meses, dosis_total, edades_dosis_meses)
+     VALUES ($1, $2, $3, $4)
+     RETURNING ${COLUMNAS}`,
+    [nombre, edad_recomendada_meses, dosis_total, edades_dosis_meses]
   );
   return rows[0];
 }
 
-async function actualizar(id, { nombre, edad_recomendada_meses, dosis_total }) {
+async function actualizar(id, { nombre, edad_recomendada_meses, dosis_total, edades_dosis_meses }) {
   await obtenerPorId(id); // lanza 404 si no existe
   await verificarNombreLibre(nombre, id);
 
@@ -70,10 +72,10 @@ async function actualizar(id, { nombre, edad_recomendada_meses, dosis_total }) {
 
   const { rows } = await pool.query(
     `UPDATE vacuna
-     SET nombre = $1, edad_recomendada_meses = $2, dosis_total = $3
-     WHERE id = $4
-     RETURNING id, nombre, edad_recomendada_meses, dosis_total`,
-    [nombre, edad_recomendada_meses, dosis_total, id]
+     SET nombre = $1, edad_recomendada_meses = $2, dosis_total = $3, edades_dosis_meses = $4
+     WHERE id = $5
+     RETURNING ${COLUMNAS}`,
+    [nombre, edad_recomendada_meses, dosis_total, edades_dosis_meses, id]
   );
   return rows[0];
 }

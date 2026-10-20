@@ -10,6 +10,7 @@ router.use(verificarToken);
 
 router.get('/', ninoController.listar);
 router.get('/:id', ninoController.obtener);
+router.get('/:id/esquema', ninoController.esquema);
 
 // Registrar y editar: todo el personal (administrador, encargado y personal de salud)
 const PERSONAL = ['administrador', 'encargado', 'personal_salud'];

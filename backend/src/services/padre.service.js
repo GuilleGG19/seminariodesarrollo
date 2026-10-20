@@ -1,5 +1,11 @@
 // Logica del CRUD de padres/tutores. Aqui viven las consultas SQL.
+//
+// DPI, telefono, correo y chat de Telegram se guardan CIFRADOS (utils/cifrado.js).
+// dpi_hash permite verificar que el DPI no se repita y buscar por DPI exacto.
+// En los listados el DPI se devuelve enmascarado; completo solo en el detalle.
 const { pool } = require('../config/db');
+const { cifrar, descifrar, hashBusqueda, enmascarar } = require('../utils/cifrado');
+const { consultar } = require('../utils/paginacion');
 
 const crearError = (status, mensaje) => Object.assign(new Error(mensaje), { status });
 
@@ -12,17 +18,43 @@ const SELECT_PADRE = `
   FROM padre p
   JOIN comunidad c ON c.id = p.comunidad_id`;
 
-// Filtros opcionales: "buscar" (nombre o DPI) y "comunidadId"
-async function listar({ buscar, comunidadId }) {
+// Descifra los datos personales de una fila
+function descifrarFila(fila) {
+  return {
+    ...fila,
+    dpi: descifrar(fila.dpi),
+    telefono: descifrar(fila.telefono),
+    correo: descifrar(fila.correo),
+    telegram_chat_id: descifrar(fila.telegram_chat_id),
+  };
+}
+
+// Version para listados: DPI enmascarado
+const filaListado = (fila) => {
+  const limpia = descifrarFila(fila);
+  return { ...limpia, dpi: enmascarar(limpia.dpi) };
+};
+
+// Filtros opcionales: "buscar" (nombre, o DPI completo de 13 digitos) y "comunidadId".
+// El DPI esta cifrado: solo se puede buscar por el DPI exacto, no por una parte.
+async function listar({ buscar, comunidadId }, paginacion) {
   const patron = buscar ? `%${buscar}%` : null;
-  const { rows } = await pool.query(
-    `${SELECT_PADRE}
-     WHERE ($1::text IS NULL OR p.nombre_completo ILIKE $1 OR p.dpi ILIKE $1)
-       AND ($2::uuid IS NULL OR p.comunidad_id = $2)
-     ORDER BY p.nombre_completo`,
-    [patron, comunidadId || null]
+  const dpi = buscar ? buscar.replace(/[\s-]/g, '') : '';
+  const dpiHash = /^\d{13}$/.test(dpi) ? hashBusqueda(dpi) : null;
+
+  const resultado = await consultar(
+    pool,
+    {
+      sql: `${SELECT_PADRE}
+            WHERE ($1::text IS NULL OR p.nombre_completo ILIKE $1 OR p.dpi_hash = $3)
+              AND ($2::uuid IS NULL OR p.comunidad_id = $2)`,
+      params: [patron, comunidadId || null, dpiHash],
+      orden: 't.nombre_completo',
+    },
+    paginacion
   );
-  return rows;
+  if (Array.isArray(resultado)) return resultado.map(filaListado);
+  return { ...resultado, datos: resultado.datos.map(filaListado) };
 }
 
 // En el detalle se incluyen tambien los ninos del padre
@@ -39,7 +71,7 @@ async function obtenerPorId(id) {
      ORDER BY nombre`,
     [id]
   );
-  return { ...rows[0], ninos: ninos.rows };
+  return { ...descifrarFila(rows[0]), ninos: ninos.rows };
 }
 
 // Comprueba que la comunidad exista antes de usarla
@@ -50,7 +82,7 @@ async function verificarComunidad(comunidadId) {
   }
 }
 
-// El unico campo UNIQUE de padre (aparte del id) es el DPI
+// El unico campo UNIQUE de padre (aparte del id) es el DPI (via dpi_hash)
 function traducirErrorDpi(error) {
   if (error.code === '23505') {
     return crearError(409, 'Ya existe un padre o tutor registrado con ese DPI');
@@ -58,24 +90,28 @@ function traducirErrorDpi(error) {
   return error;
 }
 
+// Valores en el orden de las columnas de INSERT/UPDATE, con los datos personales cifrados
+const valoresCifrados = (datos) => [
+  datos.comunidad_id,
+  datos.nombre_completo,
+  cifrar(datos.dpi),
+  hashBusqueda(datos.dpi),
+  cifrar(datos.telefono),
+  cifrar(datos.correo),
+  datos.canal_preferido,
+  cifrar(datos.telegram_chat_id),
+];
+
 async function crear(datos) {
   await verificarComunidad(datos.comunidad_id);
 
   try {
     const { rows } = await pool.query(
       `INSERT INTO padre
-         (comunidad_id, nombre_completo, dpi, telefono, correo, canal_preferido, telegram_chat_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+         (comunidad_id, nombre_completo, dpi, dpi_hash, telefono, correo, canal_preferido, telegram_chat_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id`,
-      [
-        datos.comunidad_id,
-        datos.nombre_completo,
-        datos.dpi,
-        datos.telefono,
-        datos.correo,
-        datos.canal_preferido,
-        datos.telegram_chat_id,
-      ]
+      valoresCifrados(datos)
     );
     return obtenerPorId(rows[0].id);
   } catch (error) {
@@ -83,33 +119,36 @@ async function crear(datos) {
   }
 }
 
+// Si el padre cambia de comunidad, sus ninos se mueven con el en la misma transaccion
+// (un nino nunca queda en una comunidad distinta a la de su padre).
 async function actualizar(id, datos) {
   await verificarComunidad(datos.comunidad_id);
 
+  const client = await pool.connect();
   try {
-    const { rowCount } = await pool.query(
+    await client.query('BEGIN');
+    const { rowCount } = await client.query(
       `UPDATE padre
-       SET comunidad_id = $1, nombre_completo = $2, dpi = $3, telefono = $4,
-           correo = $5, canal_preferido = $6, telegram_chat_id = $7
-       WHERE id = $8`,
-      [
-        datos.comunidad_id,
-        datos.nombre_completo,
-        datos.dpi,
-        datos.telefono,
-        datos.correo,
-        datos.canal_preferido,
-        datos.telegram_chat_id,
-        id,
-      ]
+       SET comunidad_id = $1, nombre_completo = $2, dpi = $3, dpi_hash = $4, telefono = $5,
+           correo = $6, canal_preferido = $7, telegram_chat_id = $8
+       WHERE id = $9`,
+      [...valoresCifrados(datos), id]
     );
     if (rowCount === 0) {
       throw crearError(404, 'Padre o tutor no encontrado');
     }
-    return obtenerPorId(id);
+    await client.query('UPDATE nino SET comunidad_id = $1 WHERE padre_id = $2', [
+      datos.comunidad_id,
+      id,
+    ]);
+    await client.query('COMMIT');
   } catch (error) {
+    await client.query('ROLLBACK');
     throw traducirErrorDpi(error);
+  } finally {
+    client.release();
   }
+  return obtenerPorId(id);
 }
 
 async function eliminar(id) {

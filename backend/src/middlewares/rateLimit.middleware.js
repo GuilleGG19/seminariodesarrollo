@@ -4,7 +4,9 @@ const rateLimit = require('express-rate-limit');
 // Limite general para toda la API
 const limiteGeneral = rateLimit({
   windowMs: 15 * 60 * 1000, // ventana de 15 minutos
-  limit: 300, // maximo de peticiones por IP dentro de la ventana
+  // maximo de peticiones por IP dentro de la ventana (en un centro de salud
+  // varias computadoras suelen compartir la misma IP publica)
+  limit: Number(process.env.RATE_LIMIT_GENERAL) || 1000,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Demasiadas peticiones, intenta de nuevo en unos minutos' },

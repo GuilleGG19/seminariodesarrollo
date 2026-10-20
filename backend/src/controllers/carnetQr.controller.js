@@ -1,6 +1,7 @@
 // Controlador del carnet QR: valida lo que llega por HTTP y responde.
 // La logica y las consultas estan en services/carnetQr.service.js
 const carnetService = require('../services/carnetQr.service');
+const { leerPaginacion } = require('../utils/paginacion');
 
 const leer = (valor) => (typeof valor === 'string' ? valor.trim() : '');
 const TOKEN_VALIDO = /^[A-Za-z0-9_-]{43}$/; // 32 bytes en base64url
@@ -34,10 +35,12 @@ const generar = async (req, res, next) => {
   }
 };
 
-// GET /api/carnets-qr?nino_id=uuid
+// GET /api/carnets-qr?nino_id=uuid&pagina=1&limite=50
 const listar = async (req, res, next) => {
   try {
-    res.json(await carnetService.listar({ ninoId: leer(req.query.nino_id) }));
+    const { paginacion, error } = leerPaginacion(req.query);
+    if (error) return res.status(400).json({ error });
+    res.json(await carnetService.listar({ ninoId: leer(req.query.nino_id) }, paginacion));
   } catch (error) {
     next(error);
   }

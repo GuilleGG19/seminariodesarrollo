@@ -3,6 +3,7 @@
 require('dotenv').config();
 const bcrypt = require('bcryptjs');
 const { pool } = require('../src/config/db');
+const { validarPassword } = require('../src/utils/password');
 
 async function main() {
   const [nombre, correo, password] = process.argv.slice(2);
@@ -12,8 +13,9 @@ async function main() {
     process.exitCode = 1;
     return;
   }
-  if (password.length < 8) {
-    console.error('La contrasena debe tener al menos 8 caracteres');
+  const errorPassword = validarPassword(password);
+  if (errorPassword) {
+    console.error(errorPassword);
     process.exitCode = 1;
     return;
   }

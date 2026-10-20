@@ -4,7 +4,11 @@
   "main": "src/app.js",
   "scripts": {
     "dev": "nodemon src/app.js",
-    "start": "node src/app.js"
+    "start": "node src/app.js",
+    "secretos": "node scripts/generarSecretos.js",
+    "cifrar-datos": "node scripts/cifrarDatosPersonales.js",
+    "crear-admin": "node scripts/crearAdmin.js",
+    "test": "node --test test/"
   },
   "keywords": [],
   "author": "",
@@ -20,13 +24,16 @@
     "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.3",
     "node-cron": "^4.6.0",
+    "nodemailer": "^10.1.7",
     "pdfkit": "^0.20.2",
     "pg": "^8.23.1",
     "qrcode": "^1.5.4",
-    "swagger-jsdoc": "^6.3.0",
     "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
   }
 }

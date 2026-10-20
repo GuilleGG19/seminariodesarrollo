@@ -5,6 +5,10 @@
 const { pool } = require('../config/db');
 const { hoyGuatemala } = require('../utils/fechas');
 const { UMBRALES } = require('./alertaReglas.service');
+const { descifrar } = require('../utils/cifrado');
+
+// El telefono del padre se guarda cifrado
+const conTelefono = (filas) => filas.map((f) => ({ ...f, telefono: descifrar(f.telefono) }));
 
 const crearError = (status, mensaje) => Object.assign(new Error(mensaje), { status });
 
@@ -28,12 +32,20 @@ const subtitulo = (comunidad, extra) =>
     .join(' | ');
 
 // ---------------------------------------------------------------------
-// 1) Ninos con bajo peso, sobrepeso o vacunas incompletas
+// 1) Ninos con bajo peso, sobrepeso, talla baja o vacunas incompletas
 // ---------------------------------------------------------------------
 const TIPOS_RIESGO = {
   bajo_peso: 'Niños con bajo peso',
   sobrepeso: 'Niños con sobrepeso',
+  talla_baja: 'Niños con talla baja (desnutrición crónica)',
   vacunas_incompletas: 'Niños con vacunas incompletas',
+};
+
+// Mismos umbrales que las alertas (alertaReglas.service.js)
+const REGLAS_PERCENTIL = {
+  bajo_peso: { columna: 'percentil_peso', operador: '<', limite: UMBRALES.percentilBajoPreventiva, indicador: 'peso' },
+  sobrepeso: { columna: 'percentil_peso', operador: '>', limite: UMBRALES.percentilAltoPreventiva, indicador: 'peso' },
+  talla_baja: { columna: 'percentil_talla', operador: '<', limite: UMBRALES.percentilTallaBajaPreventiva, indicador: 'talla' },
 };
 
 async function ninosEnRiesgo({ tipo, comunidadId }) {
@@ -43,72 +55,73 @@ async function ninosEnRiesgo({ tipo, comunidadId }) {
   const comunidad = await nombreComunidad(comunidadId);
 
   if (tipo === 'vacunas_incompletas') {
-    // Un nino aparece si tiene al menos una dosis registrada que aun no se aplica
+    // Un nino aparece si, segun el esquema (v_esquema_vacunacion), tiene al menos
+    // una dosis cuya fecha ya paso y no se ha aplicado, este registrada o no.
     const { rows } = await pool.query(
       `SELECT n.nombre AS nino, c.nombre AS comunidad,
-              ${edadMeses(HOY, 'n.fecha_nacimiento')} AS edad_meses,
-              count(*)::int AS dosis_faltantes,
-              (count(*) FILTER (WHERE v.proxima_dosis < ${HOY}))::int AS dosis_atrasadas,
-              string_agg(va.nombre || ' (dosis ' || v.numero_dosis || ')', ', '
-                         ORDER BY va.nombre, v.numero_dosis) AS detalle,
+              e.edad_nino_meses AS edad_meses,
+              count(*)::int AS dosis_atrasadas,
+              max(e.dias_atraso)::int AS max_dias_atraso,
+              string_agg(e.vacuna || ' (dosis ' || e.numero_dosis || ')', ', '
+                         ORDER BY e.fecha_objetivo, e.vacuna) AS detalle,
               p.nombre_completo AS padre, p.telefono
-       FROM vacunacion v
-       JOIN nino n ON n.id = v.nino_id
+       FROM v_esquema_vacunacion e
+       JOIN nino n ON n.id = e.nino_id
        JOIN comunidad c ON c.id = n.comunidad_id
        JOIN padre p ON p.id = n.padre_id
-       JOIN vacuna va ON va.id = v.vacuna_id
-       WHERE v.fecha_aplicada IS NULL
+       WHERE e.estado = 'atrasada'
+         AND e.edad_nino_meses < $2
          AND ($1::uuid IS NULL OR n.comunidad_id = $1)
-       GROUP BY n.id, c.id, p.id
+       GROUP BY n.id, n.nombre, c.nombre, e.edad_nino_meses, p.nombre_completo, p.telefono
        ORDER BY dosis_atrasadas DESC, n.nombre`,
-      [comunidadId || null]
+      [comunidadId || null, UMBRALES.edadMaximaVacunacionMeses]
     );
     return {
       titulo: TIPOS_RIESGO[tipo],
-      subtitulo: subtitulo(comunidad),
+      subtitulo: subtitulo(comunidad, 'Dosis del esquema nacional cuya fecha ya pasó sin aplicarse'),
       columnas: [
         { clave: 'nino', titulo: 'Niño', ancho: 2 },
         { clave: 'comunidad', titulo: 'Comunidad', ancho: 2 },
         { clave: 'edad_meses', titulo: 'Edad (meses)', ancho: 1 },
-        { clave: 'dosis_faltantes', titulo: 'Dosis faltantes', ancho: 1 },
-        { clave: 'dosis_atrasadas', titulo: 'Atrasadas', ancho: 1 },
+        { clave: 'dosis_atrasadas', titulo: 'Dosis atrasadas', ancho: 1 },
+        { clave: 'max_dias_atraso', titulo: 'Máx. días de atraso', ancho: 1 },
         { clave: 'detalle', titulo: 'Detalle', ancho: 4 },
         { clave: 'padre', titulo: 'Padre/Madre', ancho: 2 },
         { clave: 'telefono', titulo: 'Teléfono', ancho: 1.5 },
       ],
-      filas: rows,
+      filas: conTelefono(rows),
     };
   }
 
-  // Bajo peso / sobrepeso: segun el ULTIMO registro de crecimiento de cada nino
-  const condicion = tipo === 'bajo_peso' ? 'u.percentil_peso < $2' : 'u.percentil_peso > $2';
-  const limite = tipo === 'bajo_peso' ? UMBRALES.percentilBajoPreventiva : UMBRALES.percentilAltoPreventiva;
+  // Bajo peso / sobrepeso / talla baja: segun el ULTIMO registro de crecimiento de cada nino
+  const regla = REGLAS_PERCENTIL[tipo];
   const { rows } = await pool.query(
     `SELECT n.nombre AS nino, c.nombre AS comunidad,
             ${edadMeses(HOY, 'n.fecha_nacimiento')} AS edad_meses,
             u.fecha_medicion, u.peso_kg::float AS peso_kg, u.talla_cm::float AS talla_cm,
-            u.percentil_peso::float AS percentil_peso,
+            u.percentil_peso::float AS percentil_peso, u.percentil_talla::float AS percentil_talla,
             p.nombre_completo AS padre, p.telefono
      FROM nino n
      JOIN comunidad c ON c.id = n.comunidad_id
      JOIN padre p ON p.id = n.padre_id
      JOIN LATERAL (
-       SELECT r.fecha_medicion, r.peso_kg, r.talla_cm, r.percentil_peso
+       SELECT r.fecha_medicion, r.peso_kg, r.talla_cm, r.percentil_peso, r.percentil_talla
        FROM registro_crecimiento r
        WHERE r.nino_id = n.id
        ORDER BY r.fecha_medicion DESC, r.id DESC
        LIMIT 1
      ) u ON true
-     WHERE ${condicion}
+     WHERE u.${regla.columna} ${regla.operador} $2
+       AND ${edadMeses(HOY, 'n.fecha_nacimiento')} < $3
        AND ($1::uuid IS NULL OR n.comunidad_id = $1)
-     ORDER BY u.percentil_peso ${tipo === 'bajo_peso' ? 'ASC' : 'DESC'}, n.nombre`,
-    [comunidadId || null, limite]
+     ORDER BY u.${regla.columna} ${regla.operador === '<' ? 'ASC' : 'DESC'}, n.nombre`,
+    [comunidadId || null, regla.limite, UMBRALES.edadMaximaControlMeses]
   );
   return {
     titulo: TIPOS_RIESGO[tipo],
     subtitulo: subtitulo(
       comunidad,
-      `Último registro con percentil de peso ${tipo === 'bajo_peso' ? 'menor a' : 'mayor a'} ${limite}`
+      `Último registro con percentil de ${regla.indicador} ${regla.operador === '<' ? 'menor a' : 'mayor a'} ${regla.limite} (menores de 5 años)`
     ),
     columnas: [
       { clave: 'nino', titulo: 'Niño', ancho: 2 },
@@ -118,10 +131,11 @@ async function ninosEnRiesgo({ tipo, comunidadId }) {
       { clave: 'peso_kg', titulo: 'Peso (kg)', ancho: 1 },
       { clave: 'talla_cm', titulo: 'Talla (cm)', ancho: 1 },
       { clave: 'percentil_peso', titulo: 'Percentil peso', ancho: 1 },
+      { clave: 'percentil_talla', titulo: 'Percentil talla', ancho: 1 },
       { clave: 'padre', titulo: 'Padre/Madre', ancho: 2 },
       { clave: 'telefono', titulo: 'Teléfono', ancho: 1.5 },
     ],
-    filas: rows,
+    filas: conTelefono(rows),
   };
 }
 
