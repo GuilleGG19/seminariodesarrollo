@@ -182,7 +182,14 @@ async function iniciar() {
       iniciarJobs(); // tareas programadas (node-cron)
     });
   } catch (error) {
-    console.error('No se pudo conectar a la base de datos:', error.message);
+    // Si la conexion es rechazada, pg lanza un AggregateError sin mensaje: se usa el codigo
+    const causa = error.message || error.code || (error.errors && error.errors[0]?.code) || String(error);
+    console.error(`No se pudo conectar a la base de datos (${process.env.DB_HOST}:${process.env.DB_PORT}): ${causa}`);
+    if (/ECONNREFUSED/.test(causa) || error.code === 'ECONNREFUSED') {
+      console.error('PostgreSQL no está escuchando. ¿Está encendido Docker Desktop y el contenedor sccvi_postgres? (docker compose up -d)');
+    } else if (error.code === '28P01') {
+      console.error('Usuario o contraseña incorrectos: revisa DB_USER y DB_PASSWORD en backend/.env');
+    }
     process.exit(1);
   }
 }

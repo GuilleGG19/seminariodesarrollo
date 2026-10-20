@@ -8,7 +8,8 @@
     "secretos": "node scripts/generarSecretos.js",
     "cifrar-datos": "node scripts/cifrarDatosPersonales.js",
     "crear-admin": "node scripts/crearAdmin.js",
-    "test": "node --test test/"
+    "test": "node --test test/",
+    "rotar-claves": "node scripts/rotarClaves.js"
   },
   "keywords": [],
   "author": "",
