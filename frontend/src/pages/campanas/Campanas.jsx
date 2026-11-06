@@ -153,7 +153,7 @@ function NuevaCampana({ abierto, alCerrar }) {
             min={hoy()}
             value={fechaProgramada}
             onChange={(e) => setFechaProgramada(e.target.value)}
-            ayuda="Si la indicas, el aviso se envía ese día y la fecha aparece en el mensaje."
+            ayuda="El aviso se envía de inmediato y anuncia esta fecha a los padres."
           />
         </div>
       </div>
@@ -174,7 +174,7 @@ function DetalleCampana({ id, alCerrar }) {
           <dl className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
             <Dato etiqueta="Creada">{fechaHora(data.fecha_creacion)}</Dato>
             <Dato etiqueta="Por">{data.creada_por}</Dato>
-            <Dato etiqueta="Fecha programada">{data.fecha_programada ? fecha(data.fecha_programada) : 'Inmediata'}</Dato>
+            <Dato etiqueta="Fecha de la jornada">{data.fecha_programada ? fecha(data.fecha_programada) : 'Sin fecha'}</Dato>
             <Dato etiqueta="Comunidad">{data.comunidad || 'Todas'}</Dato>
             <Dato etiqueta="Enviadas / pendientes / fallidas">{`${data.enviadas} / ${data.pendientes} / ${data.fallidas}`}</Dato>
           </dl>

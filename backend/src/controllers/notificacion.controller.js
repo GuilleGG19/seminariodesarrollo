@@ -1,5 +1,6 @@
 // Controlador de notificaciones: valida lo que llega por HTTP y responde.
 const notificacionService = require('../services/notificacion.service');
+const telegramBot = require('../services/telegramBot.service');
 const { leerPaginacion } = require('../utils/paginacion');
 
 const ESTADOS = ['pendiente', 'enviado', 'fallido'];
@@ -42,7 +43,7 @@ const listar = async (req, res, next) => {
 
 // GET /api/notificaciones/canales
 const canales = (req, res) => {
-  res.json(notificacionService.estadoCanales());
+  res.json({ ...notificacionService.estadoCanales(), telegram_bot: telegramBot.estadoBot() });
 };
 
 // POST /api/notificaciones/procesar   (envia ya las pendientes, sin esperar a la tarea programada)

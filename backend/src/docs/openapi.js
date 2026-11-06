@@ -205,6 +205,18 @@ const paths = {
     item: 'Nino', entrada: 'NinoEntrada', paginada: true,
     filtros: [q('buscar', 'Texto en el nombre'), uuidQ('comunidad_id', 'Comunidad'), uuidQ('padre_id', 'Padre'), q('sexo', 'M o F', { type: 'string', enum: ['M', 'F'] })],
   }),
+  '/padres/{id}/telegram': {
+    post: op('Padres', 'Generar enlace y QR para vincular al padre con el bot de Telegram (vence en 24 h)', {
+      roles: TODOS,
+      params: [idPath],
+      respuestas: {
+        201: ok('Enlace', s({ enlace: str(), qr_data_url: str(), expira: fechaHora, bot: str() })),
+        ...err(404),
+        503: { description: 'El bot de Telegram no está configurado' },
+      },
+    }),
+    delete: op('Padres', 'Desvincular Telegram (vuelve a correo si tiene)', { roles: TODOS, params: [idPath], respuestas: { 200: ok('Desvinculado', ref('Mensaje')), ...err(404) } }),
+  },
   '/ninos/{id}/esquema': {
     get: op('Niños', 'Cartilla de vacunación: esquema esperado vs aplicado', { roles: TODOS, params: [idPath], respuestas: { 200: ok('Esquema', ref('Esquema')), ...err(404) } }),
   },

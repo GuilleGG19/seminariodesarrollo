@@ -19,6 +19,16 @@ function validarEntorno() {
     if (!process.env[nombre]) errores.push(`Falta ${nombre}`);
   }
 
+  // Correo con Resend: la clave empieza con "re_" y hace falta un remitente
+  if (process.env.RESEND_API_KEY) {
+    if (!process.env.RESEND_API_KEY.startsWith('re_')) {
+      errores.push('RESEND_API_KEY no parece una clave de Resend (debe empezar con "re_")');
+    }
+    if (!/<[^@\s]+@[^@\s]+\.[^@\s>]+>$|^[^@\s<]+@[^@\s]+\.[^@\s]+$/.test((process.env.EMAIL_FROM || '').trim())) {
+      errores.push('Con Resend, EMAIL_FROM es obligatorio: "Nombre <correo@tu-dominio.com>" o "correo@tu-dominio.com"');
+    }
+  }
+
   if (process.env.NODE_ENV === 'production') {
     if (!process.env.FRONTEND_URL || !process.env.FRONTEND_URL.startsWith('https://')) {
       errores.push('En produccion FRONTEND_URL debe usar https://');

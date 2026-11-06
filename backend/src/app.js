@@ -12,6 +12,7 @@ const { validarEntorno } = require('./config/entorno');
 const { limiteGeneral } = require('./middlewares/rateLimit.middleware');
 const { registrarAuditoria } = require('./middlewares/auditoria.middleware');
 const { iniciarJobs } = require('./jobs/alertasPeriodicas.job');
+const { iniciarBot } = require('./services/telegramBot.service');
 const openapi = require('./docs/openapi');
 
 const app = express();
@@ -180,6 +181,7 @@ async function iniciar() {
       console.log(`Servidor SCCVI corriendo en http://localhost:${PORT}`);
       if (docsActivos) console.log(`Documentación de la API: http://localhost:${PORT}/api/docs`);
       iniciarJobs(); // tareas programadas (node-cron)
+      iniciarBot(); // bot de Telegram (solo si hay TELEGRAM_BOT_TOKEN)
     });
   } catch (error) {
     // Si la conexion es rechazada, pg lanza un AggregateError sin mensaje: se usa el codigo

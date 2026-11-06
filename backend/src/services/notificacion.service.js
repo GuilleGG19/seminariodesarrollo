@@ -7,7 +7,9 @@
 //  2) Se envia cada una por su canal (correo o Telegram).
 //  3) Exito -> 'enviado'. Error -> se reintenta con espera creciente; despues de
 //     MAX_INTENTOS queda 'fallido' (el personal puede reintentarla a mano).
-// Una campana con fecha_programada no se envia antes de ese dia.
+// Las campanas se envian de inmediato: su fecha_programada es el dia de la jornada
+// (se anuncia en el mensaje), no el dia de envio.
+const crypto = require('crypto');
 const { pool } = require('../config/db');
 const { descifrar } = require('../utils/cifrado');
 const { consultar } = require('../utils/paginacion');
@@ -19,7 +21,6 @@ const LOTE = 50;
 const MAX_INTENTOS = 3;
 const MINUTOS_RESERVA = 10; // si el proceso se cae a medio envio, se reintenta despues de esto
 const MINUTOS_ESPERA_BASE = 5; // 5, 10, 20... minutos entre reintentos
-const HOY = `(now() at time zone 'America/Guatemala')::date`;
 
 const ETIQUETAS_ALERTA = {
   desnutricion: 'peso bajo',
@@ -28,6 +29,16 @@ const ETIQUETAS_ALERTA = {
   sin_registros: 'control de crecimiento pendiente',
   vacuna_atrasada: 'vacunas atrasadas',
 };
+
+// "2026-11-06" -> "viernes 6 de noviembre de 2026" (se arma a mediodia UTC para no cambiar de dia)
+const fechaLarga = (aaaammdd) =>
+  new Date(`${aaaammdd}T12:00:00Z`).toLocaleDateString('es-GT', {
+    timeZone: 'UTC',
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
 
 // Arma el asunto y el texto de una notificacion
 function armarMensaje(n) {
@@ -41,9 +52,11 @@ function armarMensaje(n) {
       texto: `${saludo}\n\n${n.alerta_mensaje}${pie}`,
     };
   }
-  const fecha = n.campana_fecha_programada ? `\n\nFecha: ${n.campana_fecha_programada}` : '';
+  const fecha = n.campana_fecha_programada ? `\n\nFecha de la jornada: ${fechaLarga(n.campana_fecha_programada)}` : '';
   return {
-    asunto: 'Aviso del centro de salud',
+    asunto: n.campana_fecha_programada
+      ? `Aviso del centro de salud: jornada del ${fechaLarga(n.campana_fecha_programada)}`
+      : 'Aviso del centro de salud',
     texto: `${saludo}\n\n${n.campana_mensaje}${fecha}\n\nNiño(s): ${n.nino}${pie}`,
   };
 }
@@ -56,13 +69,11 @@ async function reservarLote(limite) {
     const { rows } = await client.query(
       `SELECT x.id
        FROM notificacion x
-       LEFT JOIN campana ca ON ca.id = x.campana_id
        WHERE x.estado_envio = 'pendiente'
          AND x.proximo_intento <= now()
-         AND (ca.fecha_programada IS NULL OR ca.fecha_programada <= ${HOY})
        ORDER BY x.proximo_intento
        LIMIT $1
-       FOR UPDATE OF x SKIP LOCKED`,
+       FOR UPDATE SKIP LOCKED`,
       [limite]
     );
     const ids = rows.map((r) => r.id);
@@ -104,14 +115,20 @@ async function datosEnvio(ids) {
   return rows.map((r) => ({ ...r, correo: descifrar(r.correo), telegram_chat_id: descifrar(r.telegram_chat_id) }));
 }
 
-async function marcarEnviada(id) {
+async function marcarEnviada(id, idProveedor) {
   await pool.query(
     `UPDATE notificacion
-     SET estado_envio = 'enviado', fecha_envio = now(), intentos = intentos + 1, ultimo_error = NULL
+     SET estado_envio = 'enviado', fecha_envio = now(), intentos = intentos + 1, ultimo_error = NULL,
+         id_proveedor = $2
      WHERE id = $1`,
-    [id]
+    [id, idProveedor ? String(idProveedor).slice(0, 255) : null]
   );
 }
+
+// Misma notificacion + mismo contenido = misma clave: si un reintento repite un
+// envio que si llego, el proveedor no lo duplica. Si el contenido cambio, es otro envio.
+const claveIdempotencia = (id, asunto, texto) =>
+  `sccvi-${id}-${crypto.createHash('sha256').update(`${asunto}\n${texto}`).digest('hex').slice(0, 16)}`;
 
 // definitivo = true: no se reintenta (por ejemplo, el padre no tiene contacto)
 async function marcarError(id, intentosPrevios, mensaje, definitivo = false) {
@@ -134,18 +151,24 @@ async function enviarUna(n) {
 
   const { asunto, texto } = armarMensaje(n);
   try {
+    let resultado;
     if (n.canal === 'Email') {
       if (!n.correo) return marcarError(n.id, n.intentos, 'El padre o tutor no tiene correo registrado', true);
-      await canales.enviarCorreo({ para: n.correo, asunto, texto });
+      resultado = await canales.enviarCorreo({
+        para: n.correo,
+        asunto,
+        texto,
+        claveIdempotencia: claveIdempotencia(n.id, asunto, texto),
+      });
     } else {
       if (!n.telegram_chat_id) {
         return marcarError(n.id, n.intentos, 'El padre o tutor no tiene chat de Telegram registrado', true);
       }
-      await canales.enviarTelegram({ chatId: n.telegram_chat_id, texto: `${asunto}\n\n${texto}` });
+      resultado = await canales.enviarTelegram({ chatId: n.telegram_chat_id, texto: `${asunto}\n\n${texto}` });
     }
-    return marcarEnviada(n.id);
+    return marcarEnviada(n.id, resultado.idProveedor);
   } catch (error) {
-    return marcarError(n.id, n.intentos, error.message || 'Error desconocido');
+    return marcarError(n.id, n.intentos, error.message || 'Error desconocido', Boolean(error.definitivo));
   }
 }
 
@@ -176,7 +199,7 @@ async function listar({ estado, canal, ninoId, campanaId, alertaId }, paginacion
   return consultar(
     pool,
     {
-      sql: `SELECT x.id, x.canal, x.estado_envio, x.intentos, x.ultimo_error,
+      sql: `SELECT x.id, x.canal, x.estado_envio, x.intentos, x.ultimo_error, x.id_proveedor,
                    x.fecha_creacion, x.fecha_envio, x.proximo_intento,
                    x.nino_id, n.nombre AS nino, p.nombre_completo AS padre,
                    x.alerta_id, a.tipo AS alerta_tipo, a.nivel AS alerta_nivel,

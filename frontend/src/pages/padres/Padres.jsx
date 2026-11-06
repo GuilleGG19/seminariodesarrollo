@@ -16,6 +16,7 @@ import { Modal, Confirmar } from '../../components/ui/Modal';
 import { CargandoBloque } from '../../components/ui/Cargando';
 import Boton from '../../components/ui/Boton';
 import FormNino from '../ninos/FormNino';
+import SeccionTelegram from './SeccionTelegram';
 import { fecha, sexo } from '../../utils/formato';
 
 const VACIO = { comunidad_id: '', nombre_completo: '', dpi: '', telefono: '', correo: '', canal_preferido: 'Email', telegram_chat_id: '' };
@@ -78,13 +79,17 @@ function FormPadre({ abierto, alCerrar, padre }) {
           ]}
         />
         <Entrada
-          etiqueta="Chat ID de Telegram"
+          etiqueta="Chat ID de Telegram (opcional)"
           value={v.telegram_chat_id}
           onChange={cambiar('telegram_chat_id')}
           inputMode="numeric"
-          required={v.canal_preferido === 'Telegram'}
-          ayuda="Solo si el canal es Telegram (número que da el bot del centro)"
+          ayuda="Se llena solo al vincular desde la ficha del padre (botón “Vincular Telegram”)."
         />
+        {v.canal_preferido === 'Telegram' && !v.telegram_chat_id && (
+          <p className="text-xs text-amber-700 sm:col-span-2">
+            Hasta que el padre vincule Telegram no recibirá avisos. Después de guardar, abre su ficha y usa “Vincular Telegram”.
+          </p>
+        )}
         <p className="text-xs text-slate-500 sm:col-span-2">El DPI, el teléfono y el correo se guardan cifrados.</p>
       </form>
     </Modal>
@@ -112,8 +117,8 @@ function DetallePadre({ id, alCerrar, alEditar, alAgregarNino }) {
             <Dato etiqueta="Correo">{data.correo}</Dato>
             <Dato etiqueta="Comunidad">{data.comunidad}</Dato>
             <Dato etiqueta="Canal de avisos"><Canal canal={data.canal_preferido} /></Dato>
-            {data.telegram_chat_id && <Dato etiqueta="Chat de Telegram">{data.telegram_chat_id}</Dato>}
           </dl>
+          <SeccionTelegram padre={data} />
           <h3 className="mt-5 mb-2 text-sm font-semibold text-slate-800">Hijos e hijas ({data.ninos.length})</h3>
           {data.ninos.length === 0 ? (
             <p className="text-sm text-slate-500">No tiene niños registrados.</p>

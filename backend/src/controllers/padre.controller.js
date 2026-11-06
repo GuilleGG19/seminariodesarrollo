@@ -1,6 +1,7 @@
 // Controlador de padres/tutores: valida lo que llega por HTTP y responde.
 // La logica y las consultas estan en services/padre.service.js
 const padreService = require('../services/padre.service');
+const telegramBot = require('../services/telegramBot.service');
 const { leerPaginacion } = require('../utils/paginacion');
 
 const REGEX_CORREO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -119,4 +120,23 @@ const eliminar = async (req, res, next) => {
   }
 };
 
-module.exports = { listar, obtener, crear, actualizar, eliminar };
+// POST /api/padres/:id/telegram  -> enlace y QR para que el padre se vincule con el bot
+const vincularTelegram = async (req, res, next) => {
+  try {
+    res.set('Cache-Control', 'no-store'); // el enlace funciona como una contrasena temporal
+    res.status(201).json(await telegramBot.generarVinculo(req.params.id));
+  } catch (error) {
+    next(error);
+  }
+};
+
+// DELETE /api/padres/:id/telegram
+const desvincularTelegram = async (req, res, next) => {
+  try {
+    res.json(await telegramBot.desvincular(req.params.id));
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = { listar, obtener, crear, actualizar, eliminar, vincularTelegram, desvincularTelegram };

@@ -24,6 +24,8 @@ if (!BASE_PRUEBA) {
     DATA_ENCRYPTION_KEY: crypto.randomBytes(32).toString('hex'),
     DATA_HASH_KEY: crypto.randomBytes(32).toString('hex'),
     RATE_LIMIT_GENERAL: '100000',
+    // Nunca se envian correos ni mensajes reales durante las pruebas
+    RESEND_API_KEY: '',
     SMTP_HOST: '',
     TELEGRAM_BOT_TOKEN: '',
   });

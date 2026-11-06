@@ -23,7 +23,11 @@ export const dashboard = {
 };
 
 export const comunidades = crud('/comunidades');
-export const padres = crud('/padres');
+export const padres = {
+  ...crud('/padres'),
+  vincularTelegram: (id) => datos(api.post(`/padres/${id}/telegram`)),
+  desvincularTelegram: (id) => datos(api.delete(`/padres/${id}/telegram`)),
+};
 export const vacunas = crud('/vacunas');
 export const vacunaciones = crud('/vacunaciones');
 

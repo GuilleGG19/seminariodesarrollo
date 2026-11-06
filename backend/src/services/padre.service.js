@@ -12,7 +12,8 @@ const crearError = (status, mensaje) => Object.assign(new Error(mensaje), { stat
 // Consulta base: datos del padre + nombre de su comunidad + cuantos ninos tiene
 const SELECT_PADRE = `
   SELECT p.id, p.nombre_completo, p.dpi, p.telefono, p.correo,
-         p.canal_preferido, p.telegram_chat_id,
+         p.canal_preferido, p.telegram_chat_id, p.telegram_vinculado_en,
+         (p.telegram_codigo_expira IS NOT NULL AND p.telegram_codigo_expira > now()) AS telegram_vinculo_pendiente,
          c.id AS comunidad_id, c.nombre AS comunidad,
          (SELECT count(*) FROM nino n WHERE n.padre_id = p.id)::int AS total_ninos
   FROM padre p
@@ -100,6 +101,7 @@ const valoresCifrados = (datos) => [
   cifrar(datos.correo),
   datos.canal_preferido,
   cifrar(datos.telegram_chat_id),
+  datos.telegram_chat_id ? hashBusqueda(datos.telegram_chat_id) : null,
 ];
 
 async function crear(datos) {
@@ -108,8 +110,9 @@ async function crear(datos) {
   try {
     const { rows } = await pool.query(
       `INSERT INTO padre
-         (comunidad_id, nombre_completo, dpi, dpi_hash, telefono, correo, canal_preferido, telegram_chat_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         (comunidad_id, nombre_completo, dpi, dpi_hash, telefono, correo, canal_preferido, telegram_chat_id,
+          telegram_chat_hash)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING id`,
       valoresCifrados(datos)
     );
@@ -130,8 +133,8 @@ async function actualizar(id, datos) {
     const { rowCount } = await client.query(
       `UPDATE padre
        SET comunidad_id = $1, nombre_completo = $2, dpi = $3, dpi_hash = $4, telefono = $5,
-           correo = $6, canal_preferido = $7, telegram_chat_id = $8
-       WHERE id = $9`,
+           correo = $6, canal_preferido = $7, telegram_chat_id = $8, telegram_chat_hash = $9
+       WHERE id = $10`,
       [...valoresCifrados(datos), id]
     );
     if (rowCount === 0) {

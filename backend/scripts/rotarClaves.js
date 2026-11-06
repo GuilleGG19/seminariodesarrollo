@@ -59,14 +59,16 @@ async function main() {
         Object.fromEntries(COLUMNAS.map((c) => [c, cifrado.descifrar(fila[c])]))
       );
       // Cifrar con las nuevas
-      const [nuevos, dpiHash] = conClaves(nuevaCifrado, nuevaHash, () => [
+      const [nuevos, dpiHash, chatHash] = conClaves(nuevaCifrado, nuevaHash, () => [
         COLUMNAS.map((c) => cifrado.cifrar(plano[c])),
         cifrado.hashBusqueda(plano.dpi),
+        plano.telegram_chat_id ? cifrado.hashBusqueda(plano.telegram_chat_id) : null,
       ]);
       await client.query(
-        `UPDATE padre SET dpi = $1, telefono = $2, correo = $3, telegram_chat_id = $4, dpi_hash = $5
-         WHERE id = $6`,
-        [...nuevos, dpiHash, fila.id]
+        `UPDATE padre SET dpi = $1, telefono = $2, correo = $3, telegram_chat_id = $4, dpi_hash = $5,
+                          telegram_chat_hash = $6
+         WHERE id = $7`,
+        [...nuevos, dpiHash, chatHash, fila.id]
       );
     }
 

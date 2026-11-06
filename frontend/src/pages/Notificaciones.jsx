@@ -102,9 +102,19 @@ export default function Notificaciones() {
         <div className="mb-4 flex flex-wrap gap-3 text-sm">
           <span className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 ring-1 ring-slate-200">
             <Mail className="size-4 text-slate-500" aria-hidden /> Correo: <strong className="font-medium">{TEXTO_CANAL[canales.correo]}</strong>
+            {canales.proveedor_correo && (
+              <span className="text-slate-500">
+                · {canales.proveedor_correo === 'resend' ? 'Resend' : 'SMTP'} · {canales.remitente}
+              </span>
+            )}
           </span>
           <span className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 ring-1 ring-slate-200">
             <Send className="size-4 text-slate-500" aria-hidden /> Telegram: <strong className="font-medium">{TEXTO_CANAL[canales.telegram]}</strong>
+            {canales.telegram === 'configurado' && (
+              <span className={canales.telegram_bot?.activo ? 'text-slate-500' : 'text-red-700'}>
+                · {canales.telegram_bot?.activo ? `bot ${canales.telegram_bot.usuario} activo` : `bot inactivo${canales.telegram_bot?.ultimo_error ? `: ${canales.telegram_bot.ultimo_error}` : ''}`}
+              </span>
+            )}
           </span>
         </div>
       )}
