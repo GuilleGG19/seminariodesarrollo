@@ -82,6 +82,11 @@ app.use('/health', require('./routes/health.routes'));
 
 // Limite general de peticiones y registro de auditoria para toda la API
 app.use('/api', limiteGeneral);
+// Las respuestas de la API tienen datos de pacientes: ningun proxy ni navegador debe guardarlas
+app.use('/api', (req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  next();
+});
 app.use('/api', registrarAuditoria);
 
 // Rutas del sistema
@@ -186,7 +191,13 @@ async function iniciar() {
   } catch (error) {
     // Si la conexion es rechazada, pg lanza un AggregateError sin mensaje: se usa el codigo
     const causa = error.message || error.code || (error.errors && error.errors[0]?.code) || String(error);
-    console.error(`No se pudo conectar a la base de datos (${process.env.DB_HOST}:${process.env.DB_PORT}): ${causa}`);
+    const destino = process.env.DATABASE_URL
+      ? new URL(process.env.DATABASE_URL).host
+      : `${process.env.DB_HOST}:${process.env.DB_PORT}`;
+    console.error(`No se pudo conectar a la base de datos (${destino}): ${causa}`);
+    if (/certificate|self.signed|SSL/i.test(causa)) {
+      console.error('Problema de SSL: revisa DB_SSL y DB_SSL_CA (certificado del proveedor).');
+    }
     if (/ECONNREFUSED/.test(causa) || error.code === 'ECONNREFUSED') {
       console.error('PostgreSQL no está escuchando. ¿Está encendido Docker Desktop y el contenedor sccvi_postgres? (docker compose up -d)');
     } else if (error.code === '28P01') {

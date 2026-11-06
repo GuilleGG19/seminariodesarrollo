@@ -9,7 +9,8 @@
     "cifrar-datos": "node scripts/cifrarDatosPersonales.js",
     "crear-admin": "node scripts/crearAdmin.js",
     "test": "node --test --test-concurrency=1 test/",
-    "rotar-claves": "node scripts/rotarClaves.js"
+    "rotar-claves": "node scripts/rotarClaves.js",
+    "migrar": "node scripts/migrar.js"
   },
   "keywords": [],
   "author": "",
@@ -36,5 +37,8 @@
   },
   "overrides": {
     "uuid": "^11.1.1"
+  },
+  "engines": {
+    "node": ">=20.12"
   }
 }
