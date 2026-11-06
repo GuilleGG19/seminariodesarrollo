@@ -16,6 +16,10 @@ const PERSONAL = ['administrador', 'encargado', 'personal_salud'];
 router.post('/', permitirRoles(...PERSONAL), padreController.crear);
 router.put('/:id', permitirRoles(...PERSONAL), padreController.actualizar);
 
+// Vinculacion con el bot de Telegram
+router.post('/:id/telegram', permitirRoles(...PERSONAL), padreController.vincularTelegram);
+router.delete('/:id/telegram', permitirRoles(...PERSONAL), padreController.desvincularTelegram);
+
 // Eliminar: solo administrador
 router.delete('/:id', permitirRoles('administrador'), padreController.eliminar);
 

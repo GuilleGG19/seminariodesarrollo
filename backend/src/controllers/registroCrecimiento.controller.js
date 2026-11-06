@@ -2,6 +2,7 @@
 // La logica y las consultas estan en services/registroCrecimiento.service.js
 const registroService = require('../services/registroCrecimiento.service');
 const { hoyGuatemala, esFechaReal } = require('../utils/fechas');
+const { leerPaginacion } = require('../utils/paginacion');
 
 // Rangos razonables para detectar errores de digitacion
 const PESO_MIN = 0.3;
@@ -58,11 +59,13 @@ function validarMedicion(body, { fechaObligatoria }) {
   };
 }
 
-// GET /api/registros-crecimiento?nino_id=uuid
+// GET /api/registros-crecimiento?nino_id=uuid&pagina=1&limite=50
 const listar = async (req, res, next) => {
   try {
+    const { paginacion, error } = leerPaginacion(req.query);
+    if (error) return res.status(400).json({ error });
     const ninoId = typeof req.query.nino_id === 'string' ? req.query.nino_id.trim() : '';
-    res.json(await registroService.listar({ ninoId }));
+    res.json(await registroService.listar({ ninoId }, paginacion));
   } catch (error) {
     next(error);
   }

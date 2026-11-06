@@ -12,6 +12,10 @@ const UMBRALES = {
   percentilAltoPreventiva: 95, // mayor a 95 -> posible sobrepeso (preventiva)
   percentilAltoCritica: 99, //   mayor a 99 -> critica
 
+  // Percentil de talla para la edad (OMS): talla baja = desnutricion cronica
+  percentilTallaBajaPreventiva: 5, // menor a 5 -> talla baja (preventiva)
+  percentilTallaBajaCritica: 1, //    menor a 1 -> critica
+
   // "No hay registros en X meses" (frecuencias de la seccion 6: mensual y trimestral,
   // mas un mes de margen)
   edadCambioFrecuenciaMeses: 24, // hasta esta edad el control es mensual
@@ -22,20 +26,25 @@ const UMBRALES = {
 
   // Vacunas
   diasAtrasoCritico: 30, // dosis atrasada 30 dias o mas -> critica
+  edadMaximaVacunacionMeses: 84, // el esquema nacional cubre a menores de 7 anios
 };
 
 const articulo = (sexo) => (sexo === 'F' ? 'La niña' : 'El niño');
 const textoMeses = (n) => `${n} ${n === 1 ? 'mes' : 'meses'}`;
 const redondear1 = (n) => Math.round(n * 10) / 10;
 
-// Evalua el ultimo percentil de peso y el tiempo sin mediciones de un nino.
-// nino = { nino_id, nombre, sexo, edad_meses, percentil_peso, ultima_medicion, dias_sin_registro }
+// Evalua los ultimos percentiles de peso y talla y el tiempo sin mediciones de un nino.
+// nino = { nino_id, nombre, sexo, edad_meses, percentil_peso, percentil_talla, ultima_medicion, dias_sin_registro }
 function evaluarCrecimiento(nino) {
   const alertas = [];
   const quien = `${articulo(nino.sexo)} ${nino.nombre}`;
 
+  // Las tablas de la OMS cubren hasta los 5 anios: despues ya no se evalua el
+  // percentil (evita que una medicion vieja deje una alerta abierta para siempre).
+  const enRangoOms = nino.edad_meses < UMBRALES.edadMaximaControlMeses;
+
   // 1) Peso bajo o alto para la edad
-  if (nino.percentil_peso !== null && nino.percentil_peso !== undefined) {
+  if (enRangoOms && nino.percentil_peso !== null && nino.percentil_peso !== undefined) {
     const p = Number(nino.percentil_peso);
 
     if (p < UMBRALES.percentilBajoPreventiva) {
@@ -55,7 +64,20 @@ function evaluarCrecimiento(nino) {
     }
   }
 
-  // 2) Demasiado tiempo sin mediciones (solo en el rango de edad del control de crecimiento)
+  // 2) Talla baja para la edad (desnutricion cronica)
+  if (enRangoOms && nino.percentil_talla !== null && nino.percentil_talla !== undefined) {
+    const p = Number(nino.percentil_talla);
+    if (p < UMBRALES.percentilTallaBajaPreventiva) {
+      alertas.push({
+        nino_id: nino.nino_id,
+        tipo: 'talla_baja',
+        nivel: p < UMBRALES.percentilTallaBajaCritica ? 'critica' : 'preventiva',
+        mensaje: `${quien} presenta talla baja para su edad (percentil ${redondear1(p)}), posible desnutrición crónica. Se recomienda acudir al centro de salud.`,
+      });
+    }
+  }
+
+  // 3) Demasiado tiempo sin mediciones (solo en el rango de edad del control de crecimiento)
   if (nino.edad_meses < UMBRALES.edadMaximaControlMeses) {
     const limiteMeses =
       nino.edad_meses < UMBRALES.edadCambioFrecuenciaMeses

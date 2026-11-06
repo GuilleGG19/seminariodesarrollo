@@ -26,7 +26,7 @@ function formatoValido(req, res) {
   return true;
 }
 
-// GET /api/reportes/ninos-riesgo?tipo=bajo_peso|sobrepeso|vacunas_incompletas&comunidad_id=uuid&formato=pdf
+// GET /api/reportes/ninos-riesgo?tipo=bajo_peso|sobrepeso|talla_baja|vacunas_incompletas&comunidad_id=uuid&formato=pdf
 const ninosEnRiesgo = async (req, res, next) => {
   try {
     if (!formatoValido(req, res)) return;

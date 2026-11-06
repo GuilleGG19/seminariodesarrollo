@@ -1,6 +1,7 @@
 // Controlador de usuarios: valida lo que llega por HTTP y responde.
 // La logica y las consultas estan en services/usuario.service.js
 const usuarioService = require('../services/usuario.service');
+const { validarPassword } = require('../utils/password');
 
 const REGEX_CORREO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ESTADOS = ['activo', 'inactivo'];
@@ -26,16 +27,6 @@ function validarDatos({ nombre_completo, correo, rol_id }) {
   }
   if (!REGEX_CORREO.test(correo)) {
     return 'El correo no tiene un formato válido';
-  }
-  return null;
-}
-
-function validarPassword(password) {
-  if (typeof password !== 'string' || password.length < 8) {
-    return 'La contraseña debe tener al menos 8 caracteres';
-  }
-  if (password.length > 72) {
-    return 'La contraseña no puede superar 72 caracteres';
   }
   return null;
 }
@@ -121,7 +112,7 @@ const cambiarPassword = async (req, res, next) => {
     }
 
     await usuarioService.cambiarPassword(req.params.id, req.body.password);
-    res.json({ mensaje: 'Contraseña actualizada' });
+    res.json({ mensaje: 'Contraseña actualizada. Las sesiones abiertas de ese usuario se cerraron.' });
   } catch (error) {
     next(error);
   }

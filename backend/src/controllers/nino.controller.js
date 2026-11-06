@@ -2,6 +2,7 @@
 // La logica y las consultas estan en services/nino.service.js
 const ninoService = require('../services/nino.service');
 const { hoyGuatemala, esFechaReal } = require('../utils/fechas');
+const { leerPaginacion } = require('../utils/paginacion');
 
 const MAX_EDAD_ANIOS = 18;
 
@@ -43,16 +44,27 @@ function validarCuerpo(body) {
   return { datos };
 }
 
-// GET /api/ninos?buscar=texto&comunidad_id=uuid&padre_id=uuid
+// GET /api/ninos?buscar=texto&comunidad_id=uuid&padre_id=uuid&sexo=M&pagina=1&limite=50
 const listar = async (req, res, next) => {
   try {
+    const { paginacion, error } = leerPaginacion(req.query);
+    if (error) return res.status(400).json({ error });
+
     const leer = (valor) => (typeof valor === 'string' ? valor.trim() : '');
+    const sexo = leer(req.query.sexo).toUpperCase();
+    if (sexo && !['M', 'F'].includes(sexo)) {
+      return res.status(400).json({ error: "sexo debe ser 'M' o 'F'" });
+    }
     res.json(
-      await ninoService.listar({
-        buscar: leer(req.query.buscar),
-        comunidadId: leer(req.query.comunidad_id),
-        padreId: leer(req.query.padre_id),
-      })
+      await ninoService.listar(
+        {
+          buscar: leer(req.query.buscar),
+          comunidadId: leer(req.query.comunidad_id),
+          padreId: leer(req.query.padre_id),
+          sexo,
+        },
+        paginacion
+      )
     );
   } catch (error) {
     next(error);
@@ -63,6 +75,15 @@ const listar = async (req, res, next) => {
 const obtener = async (req, res, next) => {
   try {
     res.json(await ninoService.obtenerPorId(req.params.id));
+  } catch (error) {
+    next(error);
+  }
+};
+
+// GET /api/ninos/:id/esquema
+const esquema = async (req, res, next) => {
+  try {
+    res.json(await ninoService.obtenerEsquema(req.params.id));
   } catch (error) {
     next(error);
   }
@@ -104,4 +125,4 @@ const eliminar = async (req, res, next) => {
   }
 };
 
-module.exports = { listar, obtener, crear, actualizar, eliminar };
+module.exports = { listar, obtener, esquema, crear, actualizar, eliminar };

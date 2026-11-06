@@ -87,22 +87,27 @@ async function cambiarEstado(id, estado, actorId) {
     throw crearError(403, 'No puedes desactivar tu propio usuario');
   }
 
-  const { rowCount } = await pool.query('UPDATE usuario SET estado = $1 WHERE id = $2', [
-    estado,
-    id,
-  ]);
+  // Al desactivar se invalidan tambien sus sesiones abiertas
+  const { rowCount } = await pool.query(
+    `UPDATE usuario
+     SET estado = $1::varchar,
+         token_version = token_version + (CASE WHEN $1::varchar = 'inactivo' THEN 1 ELSE 0 END)
+     WHERE id = $2`,
+    [estado, id]
+  );
   if (rowCount === 0) {
     throw crearError(404, 'Usuario no encontrado');
   }
   return obtenerPorId(id);
 }
 
+// El administrador asigna una contrasena nueva: se cierran las sesiones abiertas del usuario
 async function cambiarPassword(id, password) {
   const hash = await bcrypt.hash(password, 10);
-  const { rowCount } = await pool.query('UPDATE usuario SET password_hash = $1 WHERE id = $2', [
-    hash,
-    id,
-  ]);
+  const { rowCount } = await pool.query(
+    'UPDATE usuario SET password_hash = $1, token_version = token_version + 1 WHERE id = $2',
+    [hash, id]
+  );
   if (rowCount === 0) {
     throw crearError(404, 'Usuario no encontrado');
   }

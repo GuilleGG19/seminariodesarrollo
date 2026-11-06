@@ -2,6 +2,7 @@
 // La logica y las consultas estan en services/vacunacion.service.js
 const vacunacionService = require('../services/vacunacion.service');
 const { hoyGuatemala, esFechaReal } = require('../utils/fechas');
+const { leerPaginacion } = require('../utils/paginacion');
 
 const MAX_NUMERO_DOSIS = 20;
 const ESTADOS = ['completa', 'pendiente', 'atrasada'];
@@ -41,20 +42,25 @@ function validarFechas(body) {
   return { fecha_aplicada: fechaAplicada, proxima_dosis: proximaDosis };
 }
 
-// GET /api/vacunaciones?nino_id=uuid&vacuna_id=uuid&estado=pendiente
+// GET /api/vacunaciones?nino_id=uuid&vacuna_id=uuid&estado=pendiente&pagina=1&limite=50
 const listar = async (req, res, next) => {
   try {
+    const { paginacion, error } = leerPaginacion(req.query);
+    if (error) return res.status(400).json({ error });
     const leer = (valor) => (typeof valor === 'string' ? valor.trim() : '');
     const estado = leer(req.query.estado);
     if (estado && !ESTADOS.includes(estado)) {
       return res.status(400).json({ error: `estado debe ser uno de: ${ESTADOS.join(', ')}` });
     }
     res.json(
-      await vacunacionService.listar({
-        ninoId: leer(req.query.nino_id),
-        vacunaId: leer(req.query.vacuna_id),
-        estado,
-      })
+      await vacunacionService.listar(
+        {
+          ninoId: leer(req.query.nino_id),
+          vacunaId: leer(req.query.vacuna_id),
+          estado,
+        },
+        paginacion
+      )
     );
   } catch (error) {
     next(error);

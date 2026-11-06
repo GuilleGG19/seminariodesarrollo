@@ -1,6 +1,8 @@
 // Logica de los registros de crecimiento (peso y talla). Aqui viven las consultas SQL.
 const { pool } = require('../config/db');
 const percentilesService = require('./percentiles.service');
+const alertaService = require('./alerta.service');
+const { consultar } = require('../utils/paginacion');
 
 const crearError = (status, mensaje) => Object.assign(new Error(mensaje), { status });
 
@@ -27,14 +29,16 @@ const SELECT_REGISTRO = `
 const conAdvertencias = (registro, advertencias) =>
   advertencias.length > 0 ? { ...registro, advertencias } : registro;
 
-async function listar({ ninoId }) {
-  const { rows } = await pool.query(
-    `${SELECT_REGISTRO}
-     WHERE ($1::uuid IS NULL OR r.nino_id = $1)
-     ORDER BY r.fecha_medicion DESC, r.id`,
-    [ninoId || null]
+async function listar({ ninoId }, paginacion) {
+  return consultar(
+    pool,
+    {
+      sql: `${SELECT_REGISTRO} WHERE ($1::uuid IS NULL OR r.nino_id = $1)`,
+      params: [ninoId || null],
+      orden: 't.fecha_medicion DESC, t.id',
+    },
+    paginacion
   );
-  return rows;
 }
 
 async function obtenerPorId(id) {
@@ -79,6 +83,7 @@ async function crear({ nino_id, peso_kg, talla_cm, fecha_medicion }) {
     [nino_id, peso_kg, talla_cm, fecha_medicion, calculo.percentil_peso, calculo.percentil_talla]
   );
 
+  await alertaService.revisarNino(nino_id);
   const registro = await obtenerPorId(rows[0].id);
   return conAdvertencias(registro, calculo.advertencias);
 }
@@ -107,15 +112,17 @@ async function actualizar(id, { peso_kg, talla_cm, fecha_medicion }) {
     [peso_kg, talla_cm, fecha_medicion, calculo.percentil_peso, calculo.percentil_talla, id]
   );
 
+  await alertaService.revisarNino(ninoId);
   const registro = await obtenerPorId(id);
   return conAdvertencias(registro, calculo.advertencias);
 }
 
 async function eliminar(id) {
-  const { rowCount } = await pool.query('DELETE FROM registro_crecimiento WHERE id = $1', [id]);
-  if (rowCount === 0) {
+  const { rows } = await pool.query('DELETE FROM registro_crecimiento WHERE id = $1 RETURNING nino_id', [id]);
+  if (rows.length === 0) {
     throw crearError(404, 'Registro de crecimiento no encontrado');
   }
+  await alertaService.revisarNino(rows[0].nino_id);
 }
 
 // Datos para las graficas: mediciones del nino + curvas de referencia de la OMS

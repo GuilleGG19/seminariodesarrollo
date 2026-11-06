@@ -1,6 +1,8 @@
 // Controlador de padres/tutores: valida lo que llega por HTTP y responde.
 // La logica y las consultas estan en services/padre.service.js
 const padreService = require('../services/padre.service');
+const telegramBot = require('../services/telegramBot.service');
+const { leerPaginacion } = require('../utils/paginacion');
 
 const REGEX_CORREO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const REGEX_DPI = /^\d{13}$/; // el DPI de Guatemala tiene 13 digitos
@@ -58,13 +60,16 @@ function validarCuerpo(body) {
   return { datos };
 }
 
-// GET /api/padres?buscar=texto&comunidad_id=uuid
+// GET /api/padres?buscar=texto&comunidad_id=uuid&pagina=1&limite=50
+// "buscar" busca por nombre o por DPI completo (13 digitos)
 const listar = async (req, res, next) => {
   try {
+    const { paginacion, error } = leerPaginacion(req.query);
+    if (error) return res.status(400).json({ error });
     const buscar = typeof req.query.buscar === 'string' ? req.query.buscar.trim() : '';
     const comunidadId =
       typeof req.query.comunidad_id === 'string' ? req.query.comunidad_id.trim() : '';
-    res.json(await padreService.listar({ buscar, comunidadId }));
+    res.json(await padreService.listar({ buscar, comunidadId }, paginacion));
   } catch (error) {
     next(error);
   }
@@ -115,4 +120,23 @@ const eliminar = async (req, res, next) => {
   }
 };
 
-module.exports = { listar, obtener, crear, actualizar, eliminar };
+// POST /api/padres/:id/telegram  -> enlace y QR para que el padre se vincule con el bot
+const vincularTelegram = async (req, res, next) => {
+  try {
+    res.set('Cache-Control', 'no-store'); // el enlace funciona como una contrasena temporal
+    res.status(201).json(await telegramBot.generarVinculo(req.params.id));
+  } catch (error) {
+    next(error);
+  }
+};
+
+// DELETE /api/padres/:id/telegram
+const desvincularTelegram = async (req, res, next) => {
+  try {
+    res.json(await telegramBot.desvincular(req.params.id));
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = { listar, obtener, crear, actualizar, eliminar, vincularTelegram, desvincularTelegram };

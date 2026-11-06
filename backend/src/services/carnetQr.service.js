@@ -7,6 +7,8 @@
 //   - Cada intento de PIN se "reserva" de forma atomica ANTES de verificarlo,
 //     asi nadie puede probar muchos PIN en paralelo para saltarse el limite.
 //   - Tras MAX_INTENTOS fallos el carnet se bloquea MINUTOS_BLOQUEO minutos.
+//   - Tras MAX_INTENTOS_TOTALES fallos acumulados (no se reinician) el carnet se
+//     revoca: evita probar PIN lentamente durante semanas.
 //   - Un carnet puede expirar o ser revocado; un nino solo tiene uno activo.
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
@@ -15,9 +17,11 @@ const { pool } = require('../config/db');
 const registroService = require('./registroCrecimiento.service');
 const vacunacionService = require('./vacunacion.service');
 const alertaService = require('./alerta.service');
+const { consultar } = require('../utils/paginacion');
 
 const MAX_INTENTOS = 5;
 const MINUTOS_BLOQUEO = 15;
+const MAX_INTENTOS_TOTALES = 20;
 const DIAS_VIGENCIA_DEFECTO = 365;
 const MENSAJE_NO_DISPONIBLE = 'Carnet no disponible. Solicita uno nuevo en tu centro de salud.';
 
@@ -69,20 +73,23 @@ async function generar({ ninoId, diasVigencia }) {
 }
 
 // Lista carnets SIN token ni PIN. El estado "expirado" se calcula al consultar.
-async function listar({ ninoId }) {
-  const { rows } = await pool.query(
-    `SELECT c.id, c.nino_id, n.nombre AS nino, c.fecha_generado, c.fecha_expiracion,
+async function listar({ ninoId }, paginacion) {
+  return consultar(
+    pool,
+    {
+      sql: `SELECT c.id, c.nino_id, n.nombre AS nino, c.fecha_generado, c.fecha_expiracion,
             CASE WHEN c.estado = 'activo' AND c.fecha_expiracion <= now()
                  THEN 'expirado' ELSE c.estado END AS estado,
             (c.bloqueado_hasta IS NOT NULL AND c.bloqueado_hasta > now()) AS bloqueado,
-            c.intentos_fallidos
+            c.intentos_fallidos, c.intentos_totales
      FROM carnet_qr c
      JOIN nino n ON n.id = c.nino_id
-     WHERE ($1::uuid IS NULL OR c.nino_id = $1)
-     ORDER BY c.fecha_generado DESC`,
-    [ninoId || null]
+     WHERE ($1::uuid IS NULL OR c.nino_id = $1)`,
+      params: [ninoId || null],
+      orden: 't.fecha_generado DESC, t.id',
+    },
+    paginacion
   );
-  return rows;
 }
 
 async function revocar(id) {
@@ -175,11 +182,19 @@ async function acceder(token, pin) {
       `UPDATE carnet_qr
        SET bloqueado_hasta = CASE WHEN intentos_fallidos >= $2
                                   THEN now() + ($3::int * interval '1 minute')
-                                  ELSE bloqueado_hasta END
+                                  ELSE bloqueado_hasta END,
+           intentos_totales = intentos_totales + 1,
+           estado = CASE WHEN intentos_totales + 1 >= $4 THEN 'revocado' ELSE estado END
        WHERE id = $1
-       RETURNING intentos_fallidos, (bloqueado_hasta IS NOT NULL) AS bloqueado`,
-      [carnet.id, MAX_INTENTOS, MINUTOS_BLOQUEO]
+       RETURNING intentos_fallidos, (bloqueado_hasta IS NOT NULL) AS bloqueado, estado`,
+      [carnet.id, MAX_INTENTOS, MINUTOS_BLOQUEO, MAX_INTENTOS_TOTALES]
     );
+    if (rows[0].estado === 'revocado') {
+      throw crearError(
+        403,
+        'PIN incorrecto. El carnet fue desactivado por seguridad. Solicita uno nuevo en tu centro de salud.'
+      );
+    }
     if (rows[0].bloqueado) {
       throw crearError(429, `PIN incorrecto. Carnet bloqueado por ${MINUTOS_BLOQUEO} minutos.`);
     }

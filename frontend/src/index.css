@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+/* Colores de la marca (azul institucional, igual que los reportes PDF/Excel) */
+@theme {
+  --color-marca-50: #eef4fa;
+  --color-marca-100: #d6e4f2;
+  --color-marca-200: #adc8e4;
+  --color-marca-500: #2f6aa3;
+  --color-marca-600: #1f4e79;
+  --color-marca-700: #183e60;
+  --color-marca-800: #122f49;
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+/* Tokens de las graficas (paleta validada: ver components/graficas) */
+:root {
+  --serie-1: #2a78d6;
+  --serie-2: #eb6834;
+  --serie-3: #1baf7a;
+  --ref-banda-externa: #e8eef5;
+  --ref-banda-interna: #cfdcea;
+  --ref-mediana: #7d8fa3;
+  --grafica-cuadricula: #e1e0d9;
+  --grafica-eje: #c3c2b7;
+  --texto-tenue: #898781;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  background: #f5f7fa;
+  color: #1e293b;
+}
+
+/* Numeros alineados en tablas */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Impresion: solo se imprime el bloque marcado (por ejemplo, el carnet QR) */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .solo-impresion,
+  .solo-impresion * {
+    visibility: visible;
+  }
+  .solo-impresion {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+  }
+  .no-imprimir {
+    display: none !important;
+  }
+}
