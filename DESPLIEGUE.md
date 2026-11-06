@@ -84,10 +84,11 @@ en variables de entorno.
    NODE_ENV=production
    DATABASE_URL=postgresql://postgres.abcdefghij:TU_CLAVE@aws-0-us-east-1.pooler.supabase.com:5432/postgres
    DB_SSL=verify
-   DB_SSL_CA=<pega todo el contenido de supabase-ca.crt, incluidas las líneas BEGIN/END>
+   DB_SSL_CA=<el certificado EN UNA SOLA LÍNEA, ver abajo>
    JWT_SECRET=<del paso 0>
    DATA_ENCRYPTION_KEY=<del paso 0>
    DATA_HASH_KEY=<del paso 0>
+
    FRONTEND_URL=https://TU-PROYECTO.vercel.app
    TRUST_PROXY=2
    RESEND_API_KEY=re_...
@@ -95,6 +96,13 @@ en variables de entorno.
    TELEGRAM_BOT_TOKEN=<token del bot de PRODUCCIÓN>
    DOCS_ENABLED=true
    ```
+   - `DB_SSL_CA`: **no pegues el certificado con saltos de línea** en el Raw Editor: cada línea del
+     certificado se convierte en una variable basura y el build falla con
+     `secret ID missing for "" environment variable`. Cópialo ya en una sola línea con PowerShell:
+     ```powershell
+     (Get-Content "C:\ruta\supabase-ca.crt" -Raw).Trim() -replace "`r?`n", '\n' | Set-Clipboard
+     ```
+     y pégalo como valor de `DB_SSL_CA` (queda `-----BEGIN CERTIFICATE-----\nMIID...\n-----END CERTIFICATE-----`).
    - `FRONTEND_URL`: si aún no sabes la URL de Vercel, pon una provisional y corrígela en el paso 5
      (se usa en el enlace del QR del carnet).
    - `DOCS_ENABLED=true` publica la documentación Swagger en `/api/docs` (útil para la presentación).
